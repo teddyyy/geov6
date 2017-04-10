@@ -173,11 +173,11 @@ static int  __init geov6_init(void)
 	ret = nf_register_hook(&tx_hook_ops);
 	if (ret < 0)
 		return ret;
-/*
+
 	ret = nf_register_hook(&rx_hook_ops);
 	if (ret < 0)
 		return ret;
-*/
+
 
 	return 0;
 }
@@ -187,7 +187,7 @@ static void __exit geov6_exit(void)
 	pr_info("%s\n", __func__);
 
 	nf_unregister_hook(&tx_hook_ops);
-	//nf_unregister_hook(&rx_hook_ops);
+	nf_unregister_hook(&rx_hook_ops);
 }
 
 module_init(geov6_init);
