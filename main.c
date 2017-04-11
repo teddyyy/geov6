@@ -73,7 +73,7 @@ insert_dest_ext_header(struct sk_buff *skb)
 	       ,skb->len - sizeof(struct ipv6hdr));
 
 	skb = newskb;
-	deh = (struct dst_exthdr *)(newskb->data + sizeof(struct ipv6hdr));
+	deh = (struct dst_exthdr *)(skb->data + sizeof(struct ipv6hdr));
 
 	deh->nexthdr = nexthdr;
 	deh->hdrlen = 0x03;
@@ -108,16 +108,13 @@ int handle_tx_pkt(void *priv,
 	if (ip6h->nexthdr == NEXTHDR_UDP) {
 		pr_info("%s\n", __func__);
 		skb = insert_dest_ext_header(skb);
-		ip_route_me_harder(state->net, skb, RTN_LOCAL);
-
-		//dev_queue_xmit(skb);
+		state->okfn(state->net, state->sk, skb);
 
 		return NF_STOLEN;
 	}
 
 	return NF_ACCEPT;
 }
-
 
 static unsigned
 int handle_rx_pkt(void *priv,
