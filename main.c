@@ -8,7 +8,7 @@
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #include <net/ip_vs.h>
-
+#include <linux/time.h>
 
 struct dst_exthdr {
     __u8    nexthdr;
@@ -32,28 +32,87 @@ struct dst_exthdr {
     __u16   intpart;
     __u32   latfracpart;
     __u32   lonfracpart;
-    __u32   alt1;
-    __u32   alt2;
+    __u64   alt;
     __u32   sec;
     __u32   usec;
 } __attribute__((packed));
+
+
+struct sk_buff *
+insert_dest_ext_header(struct sk_buff *skb)
+{
+	struct sk_buff *newskb;
+	struct ipv6hdr *ip6h = ipv6_hdr(skb);
+	struct dst_exthdr *deh;
+	struct timeval tv;
+	unsigned int nexthdr = ip6h->nexthdr;
+
+	pr_info("%s\n", __func__);
+
+	ip6h->nexthdr = NEXTHDR_DEST;
+	ip6h->payload_len = htons(ntohs(ip6h->payload_len)
+				  + sizeof(struct dst_exthdr));
+
+	newskb = skb_copy_expand(skb, skb_headroom(skb),
+				 skb_tailroom(skb) + sizeof(struct dst_exthdr),
+				 GFP_ATOMIC);
+
+	if (newskb == NULL) {
+		pr_err("Allocate new sk_buffer error\n");
+		return NULL;
+	}
+
+	if (skb->sk != NULL)
+		skb_set_owner_w(newskb, skb->sk);
+
+	skb_put(newskb, sizeof(struct dst_exthdr));
+
+	memcpy(newskb->data, skb->data, sizeof(struct ipv6hdr));
+	memcpy(newskb->data + sizeof(struct ipv6hdr) + sizeof(struct dst_exthdr)
+	       ,skb->data + sizeof(struct ipv6hdr)
+	       ,skb->len - sizeof(struct ipv6hdr));
+
+	skb = newskb;
+	deh = (struct dst_exthdr *)(newskb->data + sizeof(struct ipv6hdr));
+
+	deh->nexthdr = nexthdr;
+	deh->hdrlen = 0x03;
+	deh->opttype = 0x1e;	// For experimental(RFC 4727)
+	deh->optdatalen = 0x1c;
+	deh->geotype = 0x00;
+	deh->res = 0x00;
+	deh->t = 0x01;
+	deh->a = 0x01;
+	deh->l = 0x01;
+	// 35.681368, 139.766076
+	deh->intpart = 0xb107;
+	deh->latfracpart = 0x40faf60;
+	deh->lonfracpart = 0x490f070;
+	// 3698.754638671875m(Mt. Fuji)
+	deh->alt = 0x40ace58260000000;
+
+	do_gettimeofday(&tv);
+	deh->sec = htonl(tv.tv_sec);
+	deh->usec = htonl(tv.tv_usec);
+
+	return skb;
+}
 
 static unsigned
 int handle_tx_pkt(void *priv,
 		  struct sk_buff *skb,
 		  const struct nf_hook_state *state)
 {
-	struct ipv6hdr *iph = ipv6_hdr(skb);
+	struct ipv6hdr *ip6h = ipv6_hdr(skb);
 
-	if ((iph->nexthdr != NEXTHDR_DEST) &&
-		((iph->nexthdr == NEXTHDR_TCP) || (iph->nexthdr == NEXTHDR_UDP))){
-/*
+	if (ip6h->nexthdr == NEXTHDR_UDP) {
 		pr_info("%s\n", __func__);
+		skb = insert_dest_ext_header(skb);
+		ip_route_me_harder(state->net, skb, RTN_LOCAL);
 
-		pr_info("nexthdr: %x\n", iph->nexthdr);
-		pr_info("ip src: %pI6\n", &iph->saddr);
-		pr_info("ip dst: %pI6\n", &iph->daddr);
-*/
+		//dev_queue_xmit(skb);
+
+		return NF_STOLEN;
 	}
 
 	return NF_ACCEPT;
@@ -77,6 +136,15 @@ int handle_rx_pkt(void *priv,
 			__func__, deh->nexthdr, deh->hdrlen);
 		pr_info("opttype: %x\n", deh->opttype);
 		pr_info("optdatalen: %x\n", deh->optdatalen);
+
+		if (deh->nexthdr == NEXTHDR_TCP) {
+			struct tcphdr *tcph = (struct tcphdr *)
+				(skb->data + sizeof(struct ipv6hdr)
+				 + sizeof(struct dst_exthdr));
+
+			pr_info("src port: %d\n", htons(tcph->source));
+			pr_info("dst port: %d\n", htons(tcph->dest));
+		}
 	}
 
 	return NF_ACCEPT;
@@ -109,6 +177,7 @@ static int  __init geov6_init(void)
 	ret = nf_register_hook(&rx_hook_ops);
 	if (ret < 0)
 		return ret;
+
 
 	return 0;
 }

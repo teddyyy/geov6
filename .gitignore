@@ -31,3 +31,13 @@
 # Debug files
 *.dSYM/
 *.su
+
+# Kernel module
+.tmp_versions/
+Module.symvers
+modules.order
+*.cmd
+*.mod.c
+
+# Other
+*.swp
