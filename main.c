@@ -9,6 +9,8 @@
 #include <linux/udp.h>
 #include <net/ip_vs.h>
 #include <linux/time.h>
+#include <linux/sysfs.h>
+#include <linux/fs.h>
 
 struct dst_exthdr {
     __u8    nexthdr;
@@ -36,6 +38,25 @@ struct dst_exthdr {
     __u32   sec;
     __u32   usec;
 } __attribute__((packed));
+
+
+static struct kobject *geoinfo;
+static int latitude;
+static int longitude;
+
+static ssize_t
+latitude_show(struct kobject *kobj,
+	      struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", latitude);
+}
+
+static ssize_t
+longitude_show(struct kobject *kobj,
+	       struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", longitude);
+}
 
 
 struct sk_buff *
@@ -161,11 +182,27 @@ static struct nf_hook_ops rx_hook_ops = {
 	.priority = NF_IP6_PRI_FILTER,
 };
 
+static struct kobj_attribute sys_latitude = __ATTR_RO(latitude);
+static struct kobj_attribute sys_longitude = __ATTR_RO(longitude);
+
 static int  __init geov6_init(void)
 {
 	int ret;
 
 	pr_info("%s\n", __func__);
+
+	geoinfo = kobject_create_and_add("geov6", kernel_kobj);
+	if (!geoinfo)
+		return -ENOMEM;
+
+	ret = sysfs_create_file(geoinfo, &sys_latitude.attr);
+	if (ret < 0)
+		return ret;
+
+	ret = sysfs_create_file(geoinfo, &sys_longitude.attr);
+	if (ret < 0)
+		return ret;
+
 
 	ret = nf_register_hook(&tx_hook_ops);
 	if (ret < 0)
@@ -185,6 +222,8 @@ static void __exit geov6_exit(void)
 
 	nf_unregister_hook(&tx_hook_ops);
 	nf_unregister_hook(&rx_hook_ops);
+
+	kobject_put(geoinfo);
 }
 
 module_init(geov6_init);
