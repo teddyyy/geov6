@@ -105,7 +105,7 @@ int handle_tx_pkt(void *priv,
 {
 	struct ipv6hdr *ip6h = ipv6_hdr(skb);
 
-	if (ip6h->nexthdr == NEXTHDR_UDP) {
+	if (ip6h->nexthdr != NEXTHDR_DEST) {
 		pr_info("%s\n", __func__);
 		skb = insert_dest_ext_header(skb);
 		state->okfn(state->net, state->sk, skb);
