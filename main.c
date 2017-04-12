@@ -52,12 +52,27 @@ latitude_show(struct kobject *kobj,
 }
 
 static ssize_t
+latitude_store(struct kobject *kobj, struct kobj_attribute *attr,
+	       const char *buf, size_t count)
+{
+	sscanf(buf, "%d", &latitude);
+	return count;
+}
+
+static ssize_t
 longitude_show(struct kobject *kobj,
 	       struct kobj_attribute *attr, char *buf)
 {
 	return sprintf(buf, "%d\n", longitude);
 }
 
+static ssize_t
+longitude_store(struct kobject *kobj, struct kobj_attribute *attr,
+		const char *buf, size_t count)
+{
+	sscanf(buf, "%d", &longitude);
+	return count;
+}
 
 struct sk_buff *
 insert_dest_ext_header(struct sk_buff *skb)
@@ -182,8 +197,8 @@ static struct nf_hook_ops rx_hook_ops = {
 	.priority = NF_IP6_PRI_FILTER,
 };
 
-static struct kobj_attribute sys_latitude = __ATTR_RO(latitude);
-static struct kobj_attribute sys_longitude = __ATTR_RO(longitude);
+static struct kobj_attribute sys_latitude = __ATTR_RW(latitude);
+static struct kobj_attribute sys_longitude = __ATTR_RW(longitude);
 
 static int  __init geov6_init(void)
 {
