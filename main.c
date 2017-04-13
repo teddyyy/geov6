@@ -238,6 +238,18 @@ static struct kobj_attribute sys_intlon = __ATTR_RW(int_longitude);
 static struct kobj_attribute sys_fraclat = __ATTR_RW(frac_latitude);
 static struct kobj_attribute sys_fraclon = __ATTR_RW(frac_longitude);
 
+static struct attribute *attrs[] = {
+	&sys_intlat.attr,
+	&sys_intlon.attr,
+	&sys_fraclat.attr,
+	&sys_fraclon.attr,
+	NULL,
+};
+
+static struct attribute_group attr_group = {
+	.attrs = attrs,
+};
+
 static int  __init geov6_init(void)
 {
 	int ret;
@@ -251,19 +263,7 @@ static int  __init geov6_init(void)
 	if (!geoinfo)
 		return -ENOMEM;
 
-	ret = sysfs_create_file(geoinfo, &sys_intlat.attr);
-	if (ret < 0)
-		return ret;
-
-	ret = sysfs_create_file(geoinfo, &sys_intlon.attr);
-	if (ret < 0)
-		return ret;
-
-	ret = sysfs_create_file(geoinfo, &sys_fraclat.attr);
-	if (ret < 0)
-		return ret;
-
-	ret = sysfs_create_file(geoinfo, &sys_fraclon.attr);
+	ret = sysfs_create_group(geoinfo, &attr_group);
 	if (ret < 0)
 		return ret;
 
