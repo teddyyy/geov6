@@ -110,6 +110,24 @@ frac_longitude_store(struct kobject *kobj, struct kobj_attribute *attr,
 	return count;
 }
 
+static int
+encode_integer_part(void)
+{
+	return (ugeo->int_lat + 90) * 360 + (ugeo->int_lon + 180);
+}
+
+static int
+encode_fraction_latitude(void)
+{
+	return ugeo->frac_lat * 1000000000;
+}
+
+static int
+encode_fraction_longitude(void)
+{
+	return ugeo->frac_lon * 1000000000;
+}
+
 struct sk_buff *
 insert_dest_ext_header(struct sk_buff *skb)
 {
@@ -157,9 +175,9 @@ insert_dest_ext_header(struct sk_buff *skb)
 	deh->a = 0x01;
 	deh->l = 0x01;
 	// 35.681368, 139.766076
-	deh->intpart = 0xb107;
-	deh->latfracpart = 0x40faf60;
-	deh->lonfracpart = 0x490f070;
+	deh->intpart = encode_integer_part();
+	deh->latfracpart = encode_fraction_latitude();
+	deh->lonfracpart = encode_fraction_longitude();
 	// 3698.754638671875m(Mt. Fuji)
 	deh->alt = 0x40ace58260000000;
 
