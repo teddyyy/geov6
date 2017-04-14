@@ -9,34 +9,124 @@
 #include <linux/udp.h>
 #include <net/ip_vs.h>
 #include <linux/time.h>
+#include <linux/sysfs.h>
+#include <linux/fs.h>
 
 struct dst_exthdr {
-    __u8    nexthdr;
-    __u8    hdrlen;
-    __u8    opttype;
-    __u8    optdatalen;
-    __u8    geotype;
+	__u8    nexthdr;
+	__u8    hdrlen;
+	__u8    opttype;
+	__u8    optdatalen;
+	__u8	geotype;
 #if defined(__LITTLE_ENDIAN_BITFIELD)
-    __u8   res:5,
-	   t:1,
-	   a:1,
-	   l:1;
+	__u8	res:5,
+		t:1,
+		a:1,
+		l:1;
 #elif defined(__BIG_ENDIAN_BITFIELD)
-    __u8   res:5,
-           l:1,
-	   a:1,
-	   t:1;
+	__u8	res:5,
+		l:1,
+		a:1,
+		t:1;
 #else
 #error "Adjust your <asm/byteorder.h> defines"
 #endif
-    __u16   intpart;
-    __u32   latfracpart;
-    __u32   lonfracpart;
-    __u64   alt;
-    __u32   sec;
-    __u32   usec;
+	__u16   intpart;
+	__u32   latfracpart;
+	__u32   lonfracpart;
+	__u64   alt;
+	__u32   sec;
+	__u32   usec;
 } __attribute__((packed));
 
+
+struct user_geoinfo {
+	u16	int_lat;
+	u16	int_lon;
+	u32	frac_lat;
+	u32	frac_lon;
+};
+
+static struct kobject *geoinfo;
+static struct user_geoinfo *ugeo;
+
+static ssize_t
+int_latitude_show(struct kobject *kobj,
+		  struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", ugeo->int_lat);
+}
+
+static ssize_t
+int_latitude_store(struct kobject *kobj, struct kobj_attribute *attr,
+		   const char *buf, size_t count)
+{
+	sscanf(buf, "%hd", &ugeo->int_lat);
+	return count;
+}
+
+static ssize_t
+int_longitude_show(struct kobject *kobj,
+		   struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", ugeo->int_lon);
+}
+
+static ssize_t
+int_longitude_store(struct kobject *kobj, struct kobj_attribute *attr,
+		    const char *buf, size_t count)
+{
+	sscanf(buf, "%hd", &ugeo->int_lon);
+	return count;
+}
+
+static ssize_t
+frac_latitude_show(struct kobject *kobj,
+		   struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", ugeo->frac_lat);
+}
+
+static ssize_t
+frac_latitude_store(struct kobject *kobj, struct kobj_attribute *attr,
+		    const char *buf, size_t count)
+{
+	sscanf(buf, "%d", &ugeo->frac_lat);
+	return count;
+}
+
+static ssize_t
+frac_longitude_show(struct kobject *kobj,
+		    struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", ugeo->frac_lon);
+}
+
+static ssize_t
+frac_longitude_store(struct kobject *kobj, struct kobj_attribute *attr,
+		     const char *buf, size_t count)
+{
+	sscanf(buf, "%d", &ugeo->frac_lon);
+	return count;
+}
+
+static int
+encode_integer_part(void)
+{
+	return (ugeo->int_lat + 90) * 360 + (ugeo->int_lon + 180);
+}
+
+static int
+encode_fraction_latitude(void)
+{
+	return ugeo->frac_lat * 1000000000;
+}
+
+static int
+encode_fraction_longitude(void)
+{
+	return ugeo->frac_lon * 1000000000;
+}
 
 struct sk_buff *
 insert_dest_ext_header(struct sk_buff *skb)
@@ -85,9 +175,9 @@ insert_dest_ext_header(struct sk_buff *skb)
 	deh->a = 0x01;
 	deh->l = 0x01;
 	// 35.681368, 139.766076
-	deh->intpart = 0xb107;
-	deh->latfracpart = 0x40faf60;
-	deh->lonfracpart = 0x490f070;
+	deh->intpart = encode_integer_part();
+	deh->latfracpart = encode_fraction_latitude();
+	deh->lonfracpart = encode_fraction_longitude();
 	// 3698.754638671875m(Mt. Fuji)
 	deh->alt = 0x40ace58260000000;
 
@@ -105,7 +195,7 @@ int handle_tx_pkt(void *priv,
 {
 	struct ipv6hdr *ip6h = ipv6_hdr(skb);
 
-	if (ip6h->nexthdr == NEXTHDR_UDP) {
+	if (ip6h->nexthdr != NEXTHDR_DEST) {
 		pr_info("%s\n", __func__);
 		skb = insert_dest_ext_header(skb);
 		state->okfn(state->net, state->sk, skb);
@@ -161,11 +251,39 @@ static struct nf_hook_ops rx_hook_ops = {
 	.priority = NF_IP6_PRI_FILTER,
 };
 
+static struct kobj_attribute sys_intlat = __ATTR_RW(int_latitude);
+static struct kobj_attribute sys_intlon = __ATTR_RW(int_longitude);
+static struct kobj_attribute sys_fraclat = __ATTR_RW(frac_latitude);
+static struct kobj_attribute sys_fraclon = __ATTR_RW(frac_longitude);
+
+static struct attribute *attrs[] = {
+	&sys_intlat.attr,
+	&sys_intlon.attr,
+	&sys_fraclat.attr,
+	&sys_fraclon.attr,
+	NULL,
+};
+
+static struct attribute_group attr_group = {
+	.attrs = attrs,
+};
+
 static int  __init geov6_init(void)
 {
 	int ret;
 
 	pr_info("%s\n", __func__);
+
+	ugeo = kmalloc(sizeof(struct user_geoinfo), GFP_KERNEL);
+	memset(ugeo, 0, sizeof(struct user_geoinfo));
+
+	geoinfo = kobject_create_and_add("geov6", kernel_kobj);
+	if (!geoinfo)
+		return -ENOMEM;
+
+	ret = sysfs_create_group(geoinfo, &attr_group);
+	if (ret < 0)
+		return ret;
 
 	ret = nf_register_hook(&tx_hook_ops);
 	if (ret < 0)
@@ -185,6 +303,9 @@ static void __exit geov6_exit(void)
 
 	nf_unregister_hook(&tx_hook_ops);
 	nf_unregister_hook(&rx_hook_ops);
+
+	kobject_put(geoinfo);
+	kfree(ugeo);
 }
 
 module_init(geov6_init);
