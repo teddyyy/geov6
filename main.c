@@ -12,25 +12,17 @@
 #include <linux/sysfs.h>
 #include <linux/fs.h>
 
+#define BIT_FLAG_T 0x01
+#define BIT_FLAG_A 0x02
+#define BIT_FLAG_L 0x04
+
 struct dst_exthdr {
 	__u8    nexthdr;
 	__u8    hdrlen;
 	__u8    opttype;
 	__u8    optdatalen;
 	__u8	geotype;
-#if defined(__LITTLE_ENDIAN_BITFIELD)
-	__u8	res:5,
-		t:1,
-		a:1,
-		l:1;
-#elif defined(__BIG_ENDIAN_BITFIELD)
-	__u8	res:5,
-		l:1,
-		a:1,
-		t:1;
-#else
-#error "Adjust your <asm/byteorder.h> defines"
-#endif
+	__u8	reserve;
 	__u16   intpart;
 	__u32   latfracpart;
 	__u32   lonfracpart;
@@ -61,6 +53,9 @@ static ssize_t
 int_latitude_store(struct kobject *kobj, struct kobj_attribute *attr,
 		   const char *buf, size_t count)
 {
+	if (buf == '\0')
+		buf = 0x0000;
+
 	sscanf(buf, "%hd", &ugeo->int_lat);
 	return count;
 }
@@ -76,6 +71,9 @@ static ssize_t
 int_longitude_store(struct kobject *kobj, struct kobj_attribute *attr,
 		    const char *buf, size_t count)
 {
+	if (buf == '\0')
+		buf = 0x0000;
+
 	sscanf(buf, "%hd", &ugeo->int_lon);
 	return count;
 }
@@ -91,6 +89,9 @@ static ssize_t
 frac_latitude_store(struct kobject *kobj, struct kobj_attribute *attr,
 		    const char *buf, size_t count)
 {
+	if (buf == '\0')
+		buf = 0x00000000;
+
 	sscanf(buf, "%d", &ugeo->frac_lat);
 	return count;
 }
@@ -106,26 +107,38 @@ static ssize_t
 frac_longitude_store(struct kobject *kobj, struct kobj_attribute *attr,
 		     const char *buf, size_t count)
 {
+	if (buf == '\0')
+		buf = 0x00000000;
+
 	sscanf(buf, "%d", &ugeo->frac_lon);
 	return count;
 }
 
-static int
+static inline int
 encode_integer_part(void)
 {
-	return (ugeo->int_lat + 90) * 360 + (ugeo->int_lon + 180);
+	if ((ugeo->int_lat != 0) && (ugeo->int_lon != 0))
+		return (ugeo->int_lat + 90) * 360 + (ugeo->int_lon + 180);
+	else
+		return 0;
 }
 
-static int
+static inline int
 encode_fraction_latitude(void)
 {
-	return ugeo->frac_lat * 1000000000;
+	if (ugeo->frac_lat != 0)
+		return ugeo->frac_lat * 1000000000;
+	else
+		return 0;
 }
 
-static int
+static inline int
 encode_fraction_longitude(void)
 {
-	return ugeo->frac_lon * 1000000000;
+	if (ugeo->frac_lon != 0)
+		return ugeo->frac_lon * 1000000000;
+	else
+		return 0;
 }
 
 struct sk_buff *
@@ -170,10 +183,7 @@ insert_dest_ext_header(struct sk_buff *skb)
 	deh->opttype = 0x1e;	// For experimental(RFC 4727)
 	deh->optdatalen = 0x1c;
 	deh->geotype = 0x00;
-	deh->res = 0x00;
-	deh->t = 0x01;
-	deh->a = 0x01;
-	deh->l = 0x01;
+	deh->reserve = BIT_FLAG_T | BIT_FLAG_A | BIT_FLAG_L;
 	// 35.681368, 139.766076
 	deh->intpart = encode_integer_part();
 	deh->latfracpart = encode_fraction_latitude();
@@ -275,6 +285,11 @@ static int  __init geov6_init(void)
 	pr_info("%s\n", __func__);
 
 	ugeo = kmalloc(sizeof(struct user_geoinfo), GFP_KERNEL);
+	if (!ugeo) {
+		pr_err("Failed to kmalloc\n");
+		return -1;
+	}
+
 	memset(ugeo, 0, sizeof(struct user_geoinfo));
 
 	geoinfo = kobject_create_and_add("geov6", kernel_kobj);
@@ -292,7 +307,6 @@ static int  __init geov6_init(void)
 	ret = nf_register_hook(&rx_hook_ops);
 	if (ret < 0)
 		return ret;
-
 
 	return 0;
 }
