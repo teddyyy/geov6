@@ -12,9 +12,9 @@
 #include <linux/sysfs.h>
 #include <linux/fs.h>
 
-#define BIT_FLAG_T 0x10
-#define BIT_FLAG_A 0x20
-#define BIT_FLAG_L 0x40
+#define BIT_FLAG_T 0x01
+#define BIT_FLAG_A 0x02
+#define BIT_FLAG_L 0x04
 
 struct dst_exthdr {
 	__u8    nexthdr;
@@ -105,19 +105,28 @@ frac_longitude_store(struct kobject *kobj, struct kobj_attribute *attr,
 static inline int
 encode_integer_part(void)
 {
-	return (ugeo->int_lat + 90) * 360 + (ugeo->int_lon + 180);
+	if ((ugeo->int_lat != 0) && (ugeo->int_lon != 0))
+		return (ugeo->int_lat + 90) * 360 + (ugeo->int_lon + 180);
+	else
+		return 0;
 }
 
 static inline int
 encode_fraction_latitude(void)
 {
-	return ugeo->frac_lat * 1000000000;
+	if (ugeo->frac_lat != 0)
+		return ugeo->frac_lat * 1000000000;
+	else
+		return 0;
 }
 
 static inline int
 encode_fraction_longitude(void)
 {
-	return ugeo->frac_lon * 1000000000;
+	if (ugeo->frac_lon != 0)
+		return ugeo->frac_lon * 1000000000;
+	else
+		return 0;
 }
 
 struct sk_buff *
