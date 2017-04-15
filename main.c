@@ -53,6 +53,9 @@ static ssize_t
 int_latitude_store(struct kobject *kobj, struct kobj_attribute *attr,
 		   const char *buf, size_t count)
 {
+	if (buf == '\0')
+		buf = 0x0000;
+
 	sscanf(buf, "%hd", &ugeo->int_lat);
 	return count;
 }
@@ -68,6 +71,9 @@ static ssize_t
 int_longitude_store(struct kobject *kobj, struct kobj_attribute *attr,
 		    const char *buf, size_t count)
 {
+	if (buf == '\0')
+		buf = 0x0000;
+
 	sscanf(buf, "%hd", &ugeo->int_lon);
 	return count;
 }
@@ -83,6 +89,9 @@ static ssize_t
 frac_latitude_store(struct kobject *kobj, struct kobj_attribute *attr,
 		    const char *buf, size_t count)
 {
+	if (buf == '\0')
+		buf = 0x00000000;
+
 	sscanf(buf, "%d", &ugeo->frac_lat);
 	return count;
 }
@@ -98,6 +107,9 @@ static ssize_t
 frac_longitude_store(struct kobject *kobj, struct kobj_attribute *attr,
 		     const char *buf, size_t count)
 {
+	if (buf == '\0')
+		buf = 0x00000000;
+
 	sscanf(buf, "%d", &ugeo->frac_lon);
 	return count;
 }
@@ -273,6 +285,11 @@ static int  __init geov6_init(void)
 	pr_info("%s\n", __func__);
 
 	ugeo = kmalloc(sizeof(struct user_geoinfo), GFP_KERNEL);
+	if (!ugeo) {
+		pr_err("Failed to kmalloc\n");
+		return -1;
+	}
+
 	memset(ugeo, 0, sizeof(struct user_geoinfo));
 
 	geoinfo = kobject_create_and_add("geov6", kernel_kobj);
@@ -290,7 +307,6 @@ static int  __init geov6_init(void)
 	ret = nf_register_hook(&rx_hook_ops);
 	if (ret < 0)
 		return ret;
-
 
 	return 0;
 }
