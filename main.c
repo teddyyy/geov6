@@ -37,6 +37,7 @@ struct user_geoinfo {
 	u16	int_lon;
 	u32	frac_lat;
 	u32	frac_lon;
+	spinlock_t lock;
 };
 
 static struct kobject *geoinfo;
@@ -46,7 +47,11 @@ static ssize_t
 int_latitude_show(struct kobject *kobj,
 		  struct kobj_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%d\n", ugeo->int_lat);
+	spin_lock_bh(&ugeo->lock);
+	sprintf(buf, "%d\n", ugeo->int_lat);
+	spin_unlock_bh(&ugeo->lock);
+
+	return strlen(buf);
 }
 
 static ssize_t
@@ -56,7 +61,10 @@ int_latitude_store(struct kobject *kobj, struct kobj_attribute *attr,
 	if (buf == '\0')
 		buf = 0x0000;
 
+	spin_lock_bh(&ugeo->lock);
 	sscanf(buf, "%hd", &ugeo->int_lat);
+	spin_unlock_bh(&ugeo->lock);
+
 	return count;
 }
 
@@ -64,7 +72,11 @@ static ssize_t
 int_longitude_show(struct kobject *kobj,
 		   struct kobj_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%d\n", ugeo->int_lon);
+	spin_lock_bh(&ugeo->lock);
+	sprintf(buf, "%d\n", ugeo->int_lon);
+	spin_unlock_bh(&ugeo->lock);
+
+	return strlen(buf);
 }
 
 static ssize_t
@@ -74,7 +86,10 @@ int_longitude_store(struct kobject *kobj, struct kobj_attribute *attr,
 	if (buf == '\0')
 		buf = 0x0000;
 
+	spin_lock_bh(&ugeo->lock);
 	sscanf(buf, "%hd", &ugeo->int_lon);
+	spin_unlock_bh(&ugeo->lock);
+
 	return count;
 }
 
@@ -82,7 +97,11 @@ static ssize_t
 frac_latitude_show(struct kobject *kobj,
 		   struct kobj_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%d\n", ugeo->frac_lat);
+	spin_lock_bh(&ugeo->lock);
+	sprintf(buf, "%d\n", ugeo->frac_lat);
+	spin_unlock_bh(&ugeo->lock);
+
+	return strlen(buf);
 }
 
 static ssize_t
@@ -92,7 +111,10 @@ frac_latitude_store(struct kobject *kobj, struct kobj_attribute *attr,
 	if (buf == '\0')
 		buf = 0x00000000;
 
+	spin_lock_bh(&ugeo->lock);
 	sscanf(buf, "%d", &ugeo->frac_lat);
+	spin_unlock_bh(&ugeo->lock);
+
 	return count;
 }
 
@@ -100,7 +122,11 @@ static ssize_t
 frac_longitude_show(struct kobject *kobj,
 		    struct kobj_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%d\n", ugeo->frac_lon);
+	spin_lock_bh(&ugeo->lock);
+	sprintf(buf, "%d\n", ugeo->frac_lon);
+	spin_unlock_bh(&ugeo->lock);
+
+	return strlen(buf);
 }
 
 static ssize_t
@@ -110,7 +136,10 @@ frac_longitude_store(struct kobject *kobj, struct kobj_attribute *attr,
 	if (buf == '\0')
 		buf = 0x00000000;
 
+	spin_lock_bh(&ugeo->lock);
 	sscanf(buf, "%d", &ugeo->frac_lon);
+	spin_unlock_bh(&ugeo->lock);
+
 	return count;
 }
 
@@ -291,6 +320,7 @@ static int  __init geov6_init(void)
 	}
 
 	memset(ugeo, 0, sizeof(struct user_geoinfo));
+	spin_lock_init(&ugeo->lock);
 
 	geoinfo = kobject_create_and_add("geov6", kernel_kobj);
 	if (!geoinfo)
