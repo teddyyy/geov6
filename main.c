@@ -16,6 +16,8 @@
 #define BIT_FLAG_A 0x02
 #define BIT_FLAG_L 0x04
 
+static int debug = 0;
+
 struct dst_exthdr {
 	__u8    nexthdr;
 	__u8    hdrlen;
@@ -179,8 +181,6 @@ insert_dest_ext_header(struct sk_buff *skb)
 	struct timeval tv;
 	unsigned int nexthdr = ip6h->nexthdr;
 
-	pr_info("%s\n", __func__);
-
 	ip6h->nexthdr = NEXTHDR_DEST;
 	ip6h->payload_len = htons(ntohs(ip6h->payload_len)
 				  + sizeof(struct dst_exthdr));
@@ -235,7 +235,6 @@ int handle_tx_pkt(void *priv,
 	struct ipv6hdr *ip6h = ipv6_hdr(skb);
 
 	if (ip6h->nexthdr != NEXTHDR_DEST) {
-		pr_info("%s\n", __func__);
 		skb = insert_dest_ext_header(skb);
 		state->okfn(state->net, state->sk, skb);
 
@@ -257,19 +256,24 @@ int handle_rx_pkt(void *priv,
 		struct dst_exthdr *deh = (struct dst_exthdr *)
 			(skb->data + sizeof(struct ipv6hdr));
 
-		pr_info("func:%s, ipv6->nexthdr:%x\n", __func__, ip6h->nexthdr);
-		pr_info("func:%s, dsthdr->nexthdr:%x, dsthdr->hdrlen:%x\n",
-			__func__, deh->nexthdr, deh->hdrlen);
-		pr_info("opttype: %x\n", deh->opttype);
-		pr_info("optdatalen: %x\n", deh->optdatalen);
+		if (debug) {
+			pr_info("func:%s, ipv6->nexthdr:%x\n",
+				__func__, ip6h->nexthdr);
+			pr_info("func:%s, dsthdr->nexthdr:%x, dsthdr->hdrlen:%x\n"
+				, __func__, deh->nexthdr, deh->hdrlen);
+			pr_info("opttype: %x\n", deh->opttype);
+			pr_info("optdatalen: %x\n", deh->optdatalen);
+		}
 
 		if (deh->nexthdr == NEXTHDR_TCP) {
 			struct tcphdr *tcph = (struct tcphdr *)
 				(skb->data + sizeof(struct ipv6hdr)
 				 + sizeof(struct dst_exthdr));
 
-			pr_info("src port: %d\n", htons(tcph->source));
-			pr_info("dst port: %d\n", htons(tcph->dest));
+			if (debug) {
+				pr_info("src port: %d\n", htons(tcph->source));
+				pr_info("dst port: %d\n", htons(tcph->dest));
+			}
 		}
 	}
 
@@ -358,3 +362,5 @@ module_exit(geov6_exit);
 MODULE_AUTHOR("KIMOTO Mizuki");
 MODULE_DESCRIPTION("Kernel module for extension ipv6 header");
 MODULE_LICENSE("GPL");
+module_param(debug, int, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(debug, "Enable debug mode");
