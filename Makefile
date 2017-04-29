@@ -1,5 +1,5 @@
 obj-m		:= geov6.o
-geov6-objs	:= main.o
+geov6-objs	:= module.o
 
 KDIR        := /lib/modules/$(shell uname -r)/build/
 PWD     := $(shell pwd)
