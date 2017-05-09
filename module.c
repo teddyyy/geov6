@@ -204,9 +204,9 @@ insert_dest_ext_header(struct sk_buff *skb)
 	       ,skb->data + sizeof(struct ipv6hdr)
 	       ,skb->len - sizeof(struct ipv6hdr));
 
-	skb = newskb;
+	dev_kfree_skb(skb);
 
-	deh = (struct dst_exthdr *)(skb->data + sizeof(struct ipv6hdr));
+	deh = (struct dst_exthdr *)(newskb->data + sizeof(struct ipv6hdr));
 
 	deh->nexthdr = nexthdr;
 	deh->hdrlen = 0x03;
@@ -225,7 +225,7 @@ insert_dest_ext_header(struct sk_buff *skb)
 	deh->sec = htonl(tv.tv_sec);
 	deh->usec = htonl(tv.tv_usec);
 
-	return skb;
+	return newskb;
 }
 
 static unsigned
