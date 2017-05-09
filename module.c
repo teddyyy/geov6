@@ -205,6 +205,7 @@ insert_dest_ext_header(struct sk_buff *skb)
 	       ,skb->len - sizeof(struct ipv6hdr));
 
 	skb = newskb;
+
 	deh = (struct dst_exthdr *)(skb->data + sizeof(struct ipv6hdr));
 
 	deh->nexthdr = nexthdr;
@@ -234,7 +235,11 @@ int handle_tx_pkt(void *priv,
 {
 	struct ipv6hdr *ip6h = ipv6_hdr(skb);
 
-	if (ip6h->nexthdr != NEXTHDR_DEST) {
+	/* FIXME This module cannot be applied to
+	 * other ipv6 extension headers */
+	if (ip6h->nexthdr == NEXTHDR_TCP
+	    || ip6h->nexthdr == NEXTHDR_UDP
+	    || ip6h->nexthdr == NEXTHDR_ICMP) {
 		skb = insert_dest_ext_header(skb);
 		state->okfn(state->net, state->sk, skb);
 
@@ -263,17 +268,6 @@ int handle_rx_pkt(void *priv,
 				, __func__, deh->nexthdr, deh->hdrlen);
 			pr_info("opttype: %x\n", deh->opttype);
 			pr_info("optdatalen: %x\n", deh->optdatalen);
-		}
-
-		if (deh->nexthdr == NEXTHDR_TCP) {
-			struct tcphdr *tcph = (struct tcphdr *)
-				(skb->data + sizeof(struct ipv6hdr)
-				 + sizeof(struct dst_exthdr));
-
-			if (debug) {
-				pr_info("src port: %d\n", htons(tcph->source));
-				pr_info("dst port: %d\n", htons(tcph->dest));
-			}
 		}
 	}
 
