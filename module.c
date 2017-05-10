@@ -172,60 +172,31 @@ encode_fraction_longitude(void)
 		return 0;
 }
 
-struct sk_buff *
-insert_dest_ext_header(struct sk_buff *skb)
+void
+insert_dest_ext_header(struct sk_buff *skb,
+		       int offset, int nexthdr)
 {
-	struct sk_buff *newskb;
-	struct ipv6hdr *ip6h = ipv6_hdr(skb);
 	struct dst_exthdr *deh;
 	struct timeval tv;
-	unsigned int nexthdr = ip6h->nexthdr;
 
-	ip6h->nexthdr = NEXTHDR_DEST;
-	ip6h->payload_len = htons(ntohs(ip6h->payload_len)
-				  + sizeof(struct dst_exthdr));
-
-	newskb = skb_copy_expand(skb, skb_headroom(skb),
-				 skb_tailroom(skb) + sizeof(struct dst_exthdr),
-				 GFP_ATOMIC);
-
-	if (newskb == NULL) {
-		pr_err("Allocate new sk_buffer error\n");
-		return NULL;
-	}
-
-	if (skb->sk != NULL)
-		skb_set_owner_w(newskb, skb->sk);
-
-	skb_put(newskb, sizeof(struct dst_exthdr));
-
-	memcpy(newskb->data, skb->data, sizeof(struct ipv6hdr));
-	memcpy(newskb->data + sizeof(struct ipv6hdr) + sizeof(struct dst_exthdr)
-	       ,skb->data + sizeof(struct ipv6hdr)
-	       ,skb->len - sizeof(struct ipv6hdr));
-
-	dev_kfree_skb(skb);
-
-	deh = (struct dst_exthdr *)(newskb->data + sizeof(struct ipv6hdr));
+	deh = (struct dst_exthdr *)(skb->data + offset);
 
 	deh->nexthdr = nexthdr;
-	deh->hdrlen = 0x03;
-	deh->opttype = 0x1e;	// For experimental(RFC 4727)
-	deh->optdatalen = 0x1c;
-	deh->geotype = 0x00;
-	deh->reserve = BIT_FLAG_T | BIT_FLAG_A | BIT_FLAG_L;
-	// 35.681368, 139.766076
-	deh->intpart = encode_integer_part();
-	deh->latfracpart = encode_fraction_latitude();
-	deh->lonfracpart = encode_fraction_longitude();
-	// 3698.754638671875m(Mt. Fuji)
-	deh->alt = 0x40ace58260000000;
+        deh->hdrlen = 0x03;
+        deh->opttype = 0x1e;    // For experimental(RFC 4727)
+        deh->optdatalen = 0x1c;
+        deh->geotype = 0x00;
+        deh->reserve = BIT_FLAG_T | BIT_FLAG_A | BIT_FLAG_L;
+        // 35.681368, 139.766076
+        deh->intpart = encode_integer_part();
+        deh->latfracpart = encode_fraction_latitude();
+        deh->lonfracpart = encode_fraction_longitude();
+        // 3698.754638671875m(Mt. Fuji)
+        deh->alt = 0x40ace58260000000;
 
-	do_gettimeofday(&tv);
-	deh->sec = htonl(tv.tv_sec);
-	deh->usec = htonl(tv.tv_usec);
-
-	return newskb;
+        do_gettimeofday(&tv);
+        deh->sec = htonl(tv.tv_sec);
+        deh->usec = htonl(tv.tv_usec);
 }
 
 static unsigned
@@ -234,16 +205,47 @@ int handle_tx_pkt(void *priv,
 		  const struct nf_hook_state *state)
 {
 	struct ipv6hdr *ip6h = ipv6_hdr(skb);
+	unsigned int nexthdr;
 
 	/* FIXME This module cannot be applied to
 	 * other ipv6 extension headers */
 	if (ip6h->nexthdr == NEXTHDR_TCP
 	    || ip6h->nexthdr == NEXTHDR_UDP
 	    || ip6h->nexthdr == NEXTHDR_ICMP) {
-		skb = insert_dest_ext_header(skb);
-		state->okfn(state->net, state->sk, skb);
 
-		return NF_STOLEN;
+		// check if headroom is enough
+		if (skb_headroom(skb) < sizeof(struct dst_exthdr) + ETH_HLEN) {
+			if (pskb_expand_head(skb,
+				SKB_DATA_ALIGN(sizeof(struct dst_exthdr)
+				+ ETH_HLEN) - skb_headroom(skb),
+				0, GFP_ATOMIC) != 0) {
+				pr_err("Reallocate headroom error\n");
+				return NF_DROP;
+			}
+		}
+
+		// expand sk_buff space
+		skb_push(skb, sizeof(struct dst_exthdr));
+		memmove(skb->data, ip6h, sizeof(struct ipv6hdr));
+
+		// reset ipv6 header
+		skb_reset_network_header(skb);
+		ip6h = ipv6_hdr(skb);
+
+		memset(skb->data + sizeof(struct ipv6hdr), 0,
+		       sizeof(struct dst_exthdr));
+
+		// construct destination header
+		nexthdr = ip6h->nexthdr;
+		insert_dest_ext_header(skb, sizeof(struct ipv6hdr)
+				       + sizeof(struct dst_exthdr),
+				       nexthdr);
+
+		// set ipv6 header
+		ip6h->nexthdr = NEXTHDR_DEST;
+		ip6h->payload_len = htons(ntohs(ip6h->payload_len)
+					  + sizeof(struct dst_exthdr));
+
 	}
 
 	return NF_ACCEPT;
