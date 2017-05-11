@@ -16,6 +16,9 @@
 #define BIT_FLAG_A 0x02
 #define BIT_FLAG_L 0x04
 
+#define IPV6_HLEN 40
+#define DST_EXT_HLEN 32
+
 static int debug = 0;
 
 struct dst_exthdr {
@@ -173,13 +176,12 @@ encode_fraction_longitude(void)
 }
 
 void
-insert_dest_ext_header(struct sk_buff *skb,
-		       int offset, int nexthdr)
+insert_dest_ext_header(struct sk_buff *skb, int nexthdr)
 {
 	struct dst_exthdr *deh;
 	struct timeval tv;
 
-	deh = (struct dst_exthdr *)(skb->data + offset);
+	deh = (struct dst_exthdr *)(skb->data + IPV6_HLEN);
 
 	deh->nexthdr = nexthdr;
         deh->hdrlen = 0x03;
@@ -205,47 +207,45 @@ int handle_tx_pkt(void *priv,
 		  const struct nf_hook_state *state)
 {
 	struct ipv6hdr *ip6h = ipv6_hdr(skb);
-	unsigned int nexthdr;
+
+	if (ip6h == NULL) {
+		pr_err("Fail to find ipv6 header\n");
+		return NF_ACCEPT;
+	}
 
 	/* FIXME This module cannot be applied to
 	 * other ipv6 extension headers */
 	if (ip6h->nexthdr == NEXTHDR_TCP
-	    || ip6h->nexthdr == NEXTHDR_UDP
-	    || ip6h->nexthdr == NEXTHDR_ICMP) {
+		|| ip6h->nexthdr == NEXTHDR_UDP
+		|| ip6h->nexthdr == NEXTHDR_ICMP) {
 
 		// check if headroom is enough
-		if (skb_headroom(skb) < sizeof(struct dst_exthdr) + ETH_HLEN) {
-			if (pskb_expand_head(skb,
-				SKB_DATA_ALIGN(sizeof(struct dst_exthdr)
-				+ ETH_HLEN) - skb_headroom(skb),
-				0, GFP_ATOMIC) != 0) {
+		if (skb_headroom(skb) < DST_EXT_HLEN + ETH_HLEN) {
+			if (pskb_expand_head(skb, SKB_DATA_ALIGN(DST_EXT_HLEN
+						+ ETH_HLEN) - skb_headroom(skb),
+						0, GFP_ATOMIC) != 0) {
 				pr_err("Reallocate headroom error\n");
 				return NF_DROP;
 			}
 		}
 
-		// expand sk_buff space
-		skb_push(skb, sizeof(struct dst_exthdr));
-		memmove(skb->data, ip6h, sizeof(struct ipv6hdr));
+		// expand sk_buff space for dest header
+		skb_push(skb, DST_EXT_HLEN);
+		memmove(skb->data, ip6h, IPV6_HLEN);
 
 		// reset ipv6 header
 		skb_reset_network_header(skb);
 		ip6h = ipv6_hdr(skb);
 
-		memset(skb->data + sizeof(struct ipv6hdr), 0,
-		       sizeof(struct dst_exthdr));
+		memset(skb->data + IPV6_HLEN, 0, DST_EXT_HLEN);
 
 		// construct destination header
-		nexthdr = ip6h->nexthdr;
-		insert_dest_ext_header(skb, sizeof(struct ipv6hdr)
-				       + sizeof(struct dst_exthdr),
-				       nexthdr);
+		insert_dest_ext_header(skb, ip6h->nexthdr);
 
 		// set ipv6 header
 		ip6h->nexthdr = NEXTHDR_DEST;
 		ip6h->payload_len = htons(ntohs(ip6h->payload_len)
-					  + sizeof(struct dst_exthdr));
-
+					  + DST_EXT_HLEN);
 	}
 
 	return NF_ACCEPT;
